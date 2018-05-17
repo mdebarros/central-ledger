@@ -24,13 +24,15 @@ exports.up = function (knex, Promise) {
 
     t.dateTime('expirationDate').defaultTo(null).nullable().comment('expiration ilp condition')
 
+    // @NOTE this link has been moved into the transferStateChange table
     // t.bigInteger('transferStateChangeId').unsigned().defaultTo(0).notNullable().comment('transferState')
     // t.bigInteger('transferStateChangeId').unsigned().defaultTo(0).nullable().comment('transferState')
     // t.string('transferStateId', 50).primary().notNullable()
     // t.foreign('transferStateChangeId').references('transferStateChangeId').inTable('transferStateChange')
 
+    // @NOTE this link has been moved into the transferSettlementBatchIndex table
     // t.bigInteger('transferSettlementBatchId').unsigned().notNullable()
-    t.bigInteger('transferSettlementBatchId').unsigned().defaultTo(0).nullable()
+    // t.bigInteger('transferSettlementBatchId').unsigned().defaultTo(0).nullable()
 
     // @TODO to be added at a later stage was causing issues on initial insert
     // t.foreign('transferSettlementBatchId').references('transferSettlementBatchId').inTable('transferSettlementBatch')
