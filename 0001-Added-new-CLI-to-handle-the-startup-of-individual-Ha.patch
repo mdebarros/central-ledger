@@ -1,0 +1,1080 @@
+From 897c2aec3881b17405a4c34f9b7232fc6a1f1ef3 Mon Sep 17 00:00:00 2001
+From: Miguel de Barros <miguel@debarros.me>
+Date: Thu, 26 Jul 2018 12:57:05 +0200
+Subject: [PATCH] Added new CLI to handle the startup of individual Handlers in
+ a flexible way. Also added tests to accommodate the changes.
+
+---
+ package.json                              |   1 +
+ src/handlers/index.js                     | 128 ++++++++++++++++
+ src/handlers/positions/handler.js         |  15 +-
+ src/handlers/{handlers.js => register.js} |  15 +-
+ src/handlers/routes.js                    |   2 +-
+ src/handlers/transfers/handler.js         |  11 +-
+ src/shared/setup.js                       |  84 ++++++++++-
+ test/unit/shared/setup.test.js            | 124 +++++++++++++++-
+ testPI2/unit/handlers/handlers.test.js    |  51 -------
+ testPI2/unit/handlers/register.test.js    | 239 ++++++++++++++++++++++++++++++
+ testPI2/unit/shared/setup.test.js         | 146 +++++++++++++++---
+ 11 files changed, 730 insertions(+), 86 deletions(-)
+ create mode 100644 src/handlers/index.js
+ rename src/handlers/{handlers.js => register.js} (82%)
+ delete mode 100644 testPI2/unit/handlers/handlers.test.js
+ create mode 100644 testPI2/unit/handlers/register.test.js
+
+diff --git a/package.json b/package.json
+index 3c0cf54..c9012d5 100644
+--- a/package.json
++++ b/package.json
+@@ -67,6 +67,7 @@
+     "blipp": "3.0.0",
+     "bluebird": "3.5.0",
+     "boom": "^7.2.0",
++    "commander": "^2.16.0",
+     "continuation-local-storage": "3.2.0",
+     "deasync-promise": "1.0.1",
+     "decimal.js": "9.0.1",
+diff --git a/src/handlers/index.js b/src/handlers/index.js
+new file mode 100644
+index 0000000..6517fc8
+--- /dev/null
++++ b/src/handlers/index.js
+@@ -0,0 +1,128 @@
++/*****
++ License
++ --------------
++ Copyright © 2017 Bill & Melinda Gates Foundation
++ The Mojaloop files are made available by the Bill & Melinda Gates Foundation under the Apache License, Version 2.0 (the "License") and you may not use these files except in compliance with the License. You may obtain a copy of the License at
++
++ http://www.apache.org/licenses/LICENSE-2.0
++
++ Unless required by applicable law or agreed to in writing, the Mojaloop files are distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
++
++ Contributors
++ --------------
++ This is the official list of the Mojaloop project contributors for this file.
++ Names of the original copyright holders (individuals or organizations)
++ should be listed with a '*' in the first column. People who have
++ contributed from an organization can be listed under the organization
++ that actually holds the copyright for their contributions (see the
++ Gates Foundation organization for an example). Those individuals should have
++ their names indented and be marked with a '-'. Email address can be added
++ optionally within square brackets <email>.
++
++ * Gates Foundation
++ - Name Surname <name.surname@gatesfoundation.com>
++
++ * Miguel de Barros <miguel.debarros@modusbox.com>
++
++ --------------
++ ******/
++'use strict'
++
++/**
++ * @module Handlers CLI Startup
++ */
++
++const Logger = require('@mojaloop/central-services-shared').Logger
++const Config = require('../lib/config')
++const Setup = require('../shared/setup')
++const Program = require('commander')
++var pjson = require('../../package.json')
++
++Program
++  .version(pjson.version)
++  .description('CLI to manage Handlers')
++
++Program.command('handler') // sub-command name, coffeeType = type, required
++  .alias('h') // alternative sub-command is `o`
++  .description('Start a specified Handler') // command description
++  .option('--prepare [fspNameList]', 'Start the Prepare Handler - [fspNameList]: "," delimited list of FSPs. Optional, e,g "dfsp1, dfsp2", and if not provided all existing FSPs will be registered')
++  .option('--position [fspNameList]', 'Start the Position Handler - [fspNameList]: "," delimited list of FSPs. Optional, e,g "dfsp1, dfsp2", and if not provided all existing FSPs will be registered')
++  .option('--transfer', 'Start the Transfer Handler')
++  .option('--fulfil', 'Start the Fulfil Handler')
++  .option('--reject', 'Start the Reject Handler')
++
++  // function to execute when command is uses
++  .action(function (args) {
++    if (Array.isArray(args.options) && args.options.length > 0) {
++
++      let moduleList = []
++      if (args.prepare && typeof args.prepare === 'string') {
++        Logger.debug(`CLI: Executing --prepare ${args.prepare}`)
++        let handlerList = args.prepare.replace(/\s/g, '').split(',')
++        if (Array.isArray(handlerList) && handlerList.length >= 1) {
++          var handler = {
++            type: 'prepare',
++            enabled: true,
++            fspList: handlerList
++          }
++          moduleList.push(handler)
++        } else {
++          throw new Error('Invalid [fspNameList] provided for --prepare. Please ensure that it is a "," delimated string. e.g. "fsp1, fsp2".')
++        }
++      }
++      if (args.position) {
++        Logger.debug(`CLI: Executing --position ${args.position}`)
++        let handlerList = args.prepare.replace(/\s/g, '').split(',')
++        if (Array.isArray(handlerList) && handlerList.length >= 1) {
++          let handler = {
++            type: 'position',
++            enabled: true,
++            fspList: handlerList
++          }
++          moduleList.push(handler)
++        } else {
++          throw new Error('Invalid [fspNameList] provided for --position. Please ensure that it is a "," delimated string. e.g. "fsp1, fsp2".')
++        }
++      }
++      if (args.transfer) {
++        Logger.debug(`CLI: Executing --transfer`)
++        let handler = {
++          type: 'transfer',
++          enabled: true
++        }
++        moduleList.push(handler)
++      }
++      if (args.fulfil) {
++        Logger.debug(`CLI: Executing --fulfil`)
++        let handler = {
++          type: 'fulfil',
++          enabled: true
++        }
++        moduleList.push(handler)
++      }
++      if (args.reject) {
++        Logger.debug(`CLI: Executing --reject`)
++        let handler = {
++          type: 'reject',
++          enabled: true
++        }
++        moduleList.push(handler)
++      }
++
++      module.exports = Setup.initialize({
++        service: 'handlers',
++        port: Config.PORT,
++        modules: moduleList,
++        runMigrations: true
++      })
++    }
++  })
++
++Program.parse(process.argv)
++
++// module.exports = Setup.initialize({
++//   service: 'handlers',
++//   port: Config.PORT,
++//   modules: [Handlers],
++//   runMigrations: true
++// })
+diff --git a/src/handlers/positions/handler.js b/src/handlers/positions/handler.js
+index 8e4c54e..5285aba 100644
+--- a/src/handlers/positions/handler.js
++++ b/src/handlers/positions/handler.js
+@@ -128,12 +128,18 @@ const createPositionHandler = async (participantName) => {
+  * createPositionHandler called to create the handler for each participant
+  * @returns {boolean} - Returns a boolean: true if successful, or throws and error if failed
+  */
+-const registerPositionHandlers = async () => {
++const registerPositionHandlers = async (pParticipantNames = []) => {
+   var metricStartNow = (new Date()).getTime()
+   try {
+-    const participantList = await DAO.retrieveAllParticipants()
+-    if (participantList.length !== 0) {
+-      for (let name of participantList) {
++    let participantNames
++    if (Array.isArray(pParticipantNames) && pParticipantNames.length > 0) {
++      participantNames = pParticipantNames
++    } else {
++      participantNames = await DAO.retrieveAllParticipants()
++    }
++    // const participantNames = await DAO.retrieveAllParticipants()
++    if (participantNames.length !== 0) {
++      for (let name of participantNames) {
+         await createPositionHandler(name)
+       }
+     } else {
+@@ -146,6 +152,7 @@ const registerPositionHandlers = async () => {
+   let metricEndNow = (new Date()).getTime()
+   let metricCenLedgerRegisterPositionHandlers = metricEndNow - metricStartNow
+   Perf4js.info(metricStartNow, metricCenLedgerRegisterPositionHandlers, 'metricCenLedgerRegisterPositionHandlers')
++  return true
+ }
+ 
+ /**
+diff --git a/src/handlers/handlers.js b/src/handlers/register.js
+similarity index 82%
+rename from src/handlers/handlers.js
+rename to src/handlers/register.js
+index 6acad50..347e0d1 100644
+--- a/src/handlers/handlers.js
++++ b/src/handlers/register.js
+@@ -47,6 +47,8 @@
+ const Logger = require('@mojaloop/central-services-shared').Logger
+ const Perf4js = require('@mojaloop/central-services-shared').Perf4js
+ const requireGlob = require('require-glob')
++const TransferHandlers = require('./transfers/handler')
++const PositionHandlers = require('./positions/handler')
+ 
+ const registerAllHandlers = async (request, h) => {
+   var metricStartNow = (new Date()).getTime()
+@@ -70,5 +72,16 @@ const registerAllHandlers = async (request, h) => {
+ }
+ 
+ module.exports = {
+-  registerAllHandlers
++  registerAllHandlers,
++  transfers: {
++    registerAllHandlers: TransferHandlers.registerAllHandlers,
++    registerPrepareHandlers: TransferHandlers.registerPrepareHandlers,
++    registerTransferHandler: TransferHandlers.registerTransferHandler,
++    registerFulfillHandler: TransferHandlers.registerFulfillHandler,
++    registerRejectHandler: TransferHandlers.registerRejectHandler
++  },
++  positions: {
++    registerAllHandlers: PositionHandlers.registerAllHandlers,
++    registerPositionHandlers: PositionHandlers.registerPositionHandlers
++  }
+ }
+diff --git a/src/handlers/routes.js b/src/handlers/routes.js
+index 4a9735c..8254978 100644
+--- a/src/handlers/routes.js
++++ b/src/handlers/routes.js
+@@ -35,7 +35,7 @@
+  * @module src/handlers
+  */
+ 
+-const RegisterAllHandler = require('./handlers')
++const RegisterAllHandler = require('./register')
+ const TransferHandler = require('./transfers/handler')
+ const PositionHandler = require('./positions/handler')
+ const testProducer = require('../../testPI2/integration/helpers/testProducer')
+diff --git a/src/handlers/transfers/handler.js b/src/handlers/transfers/handler.js
+index 9e385cd..ca08ad7 100644
+--- a/src/handlers/transfers/handler.js
++++ b/src/handlers/transfers/handler.js
+@@ -466,12 +466,19 @@ const registerRejectHandler = async () => {
+  * createPrepareHandler called to create the handler for each participant
+  * @returns {boolean} - Returns a boolean: true if successful, or throws and error if failed
+  */
+-const registerPrepareHandlers = async () => {
++const registerPrepareHandlers = async (pParticipantNames = []) => {
+   var metricStartNow = (new Date()).getTime()
+   try {
+-    const participantNames = await DAO.retrieveAllParticipants()
++    let participantNames
++    if (Array.isArray(pParticipantNames) && pParticipantNames.length > 0) {
++      participantNames = pParticipantNames
++    } else {
++      participantNames = await DAO.retrieveAllParticipants()
++    }
++    // const participantNames = await DAO.retrieveAllParticipants()
+     if (participantNames.length !== 0) {
+       for (let name of participantNames) {
++        Logger.info(`Registering prepareHandler for Participant: ${name}`)
+         await createPrepareHandler(name)
+       }
+     } else {
+diff --git a/src/shared/setup.js b/src/shared/setup.js
+index 8cd8a74..84fe126 100644
+--- a/src/shared/setup.js
++++ b/src/shared/setup.js
+@@ -14,7 +14,7 @@ const UrlParser = require('../lib/urlparser')
+ const Logger = require('@mojaloop/central-services-shared').Logger
+ // const Participant = require('../domain/participant')
+ const Boom = require('boom')
+-const RegisterHandlers = require('../handlers/handlers')
++const RegisterHandlers = require('../handlers/register')
+ 
+ const migrate = (runMigrations) => {
+   return runMigrations ? Migrator.migrate() : P.resolve()
+@@ -22,6 +22,15 @@ const migrate = (runMigrations) => {
+ 
+ const connectDatabase = async () => await Db.connect(Config.DATABASE_URI)
+ 
++/**
++ * @function createServer
++ *
++ * @description Create HTTP Server
++ *
++ * @param {number} port Port to register the Server against
++ * @param modules list of Modules to be registered
++ * @returns {Promise<Server>} Returns the Server object
++ */
+ const createServer = (port, modules) => {
+   return (async () => {
+     const server = await new Hapi.Server({
+@@ -53,20 +62,83 @@ const createServer = (port, modules) => {
+   })()
+ }
+ 
++/**
++ * @function createHandlers
++ *
++ * @description Create method to register specific Handlers specified by the Module list as part of the Setup process
++ *
++ * @typedef handler
++ * @type {Object}
++ * @property {string} type The type of Handler to be registered
++ * @property {boolean} enabled True|False to indicate if the Handler should be registered
++ * @property {string[]} [fspList] List of FSPs to be registered
++ *
++ * @param {handler[]} handlers List of Handlers to be registered
++ * @returns {Promise<boolean>} Returns true if Handlers were registered
++ */
++const createHandlers = async (handlers) => {
++  let handlerIndex
++  let server = {
++    connection: {},
++    register: {},
++    ext: {},
++    start: new Date(),
++    info: {
++    },
++    handlers: handlers
++  }
++
++  for (handlerIndex in handlers) {
++    var handler = handlers[handlerIndex]
++    if (handler.enabled) {
++      Logger.info(`Handler Setup - Registering ${JSON.stringify(handler)}!`)
++      switch (handler.type) {
++        case 'prepare':
++          await RegisterHandlers.transfers.registerPrepareHandlers(handler.fspList)
++          break
++        case 'position':
++          await RegisterHandlers.positions.registerPositionHandlers(handler.fspList)
++          break
++        case 'transfer':
++          await RegisterHandlers.transfers.registerTransferHandler()
++          break
++        case 'fulfil':
++          await RegisterHandlers.transfers.registerFulfillHandler()
++          break
++        case 'reject':
++          await RegisterHandlers.transfers.registerRejectHandler()
++          break
++        default:
++          // Logger.warn(`Handler Setup - ${JSON.stringify(handler)} is not a valid handler to register!`)
++          var error = `Handler Setup - ${JSON.stringify(handler)} is not a valid handler to register!`
++          Logger.error(error)
++          throw new Error(error)
++      }
++    }
++  }
++
++  return server
++}
++
+ // Migrator.migrate is called before connecting to the database to ensure all new tables are loaded properly.
+-const initialize = async function ({service, port, modules = [], runMigrations = false}) {
++const initialize = async function ({service, port, modules = [], runMigrations = false, runHandlers = true}) {
+   await migrate(runMigrations)
+   await connectDatabase()
+   await Sidecar.connect(service)
+-  const server = await createServer(port, modules)
++  let server
+   if (service === 'api') {
+-    await RegisterHandlers.registerAllHandlers()
+-    // await Participant.createLedgerParticipant(Config.LEDGER_ACCOUNT_NAME, Config.LEDGER_ACCOUNT_PASSWORD, Config.LEDGER_ACCOUNT_EMAIL)
++    server = await createServer(port, modules)
++    if (runHandlers) {
++      await RegisterHandlers.registerAllHandlers()
++    }
++  } else if (service === 'handlers') {
++    server = await createHandlers(modules)
+   }
+   return server
+ }
+ 
+ module.exports = {
+   initialize,
+-  createServer
++  createServer,
++  createHandlers
+ }
+diff --git a/test/unit/shared/setup.test.js b/test/unit/shared/setup.test.js
+index 251c063..222bb44 100644
+--- a/test/unit/shared/setup.test.js
++++ b/test/unit/shared/setup.test.js
+@@ -13,6 +13,7 @@ const RequestLogger = require('../../../src/lib/request-logger')
+ const UrlParser = require('../../../src/lib/urlparser')
+ const Sidecar = require('../../../src/lib/sidecar')
+ const Proxyquire = require('proxyquire')
++const RegisterHandlers = require('../../../src/handlers/register')
+ 
+ Test('setup', setupTest => {
+   let sandbox
+@@ -37,8 +38,16 @@ Test('setup', setupTest => {
+     Db.connect = sandbox.stub()
+     Db.disconnect = sandbox.stub()
+     uuidStub = sandbox.stub()
+-
+-    Setup = Proxyquire('../../../src/shared/setup', { 'uuid4': uuidStub })
++    RegisterHandlers.registerAllHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerPrepareHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.positions.registerPositionHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerTransferHandler = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerFulfillHandler = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerRejectHandler = sandbox.stub().returns(P.resolve())
++
++    Setup = Proxyquire('../../../src/shared/setup', {
++      'uuid4': uuidStub
++    })
+ 
+     oldHostName = Config.HOSTNAME
+     oldDatabaseUri = Config.DATABASE_URI
+@@ -85,7 +94,7 @@ Test('setup', setupTest => {
+     initializeTest.test('connect to sidecar', test => {
+       const server = setupPromises({})
+ 
+-      const service = 'test'
++      const service = 'api'
+       Setup.initialize({ service }).then(s => {
+         test.ok(Db.connect.calledWith(databaseUri))
+         test.ok(Sidecar.connect.calledWith(service))
+@@ -98,7 +107,8 @@ Test('setup', setupTest => {
+     initializeTest.test('connect to db and return hapi server', test => {
+       const server = setupPromises({})
+ 
+-      Setup.initialize({}).then(s => {
++      const service = 'api'
++      Setup.initialize({ service }).then(s => {
+         test.ok(Db.connect.calledWith(databaseUri))
+         test.notOk(Migrator.migrate.called)
+         test.equal(s, server)
+@@ -116,6 +126,112 @@ Test('setup', setupTest => {
+       })
+     })
+ 
++    initializeTest.test('ignore handler registrations if runHandlers flag enabled', test => {
++      setupPromises({})
++
++      Setup.initialize({ service: 'api', runHandlers: true }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called)
++        test.end()
++      })
++    })
++
++    initializeTest.test('ignore handler registrations if runHandlers flag default', test => {
++      setupPromises({})
++
++      Setup.initialize({ service: 'api' }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called)
++        test.end()
++      })
++    })
++
++    initializeTest.test('ignore handler registrations if runHandlers flag disabled', test => {
++      setupPromises({})
++
++      Setup.initialize({ runHandlers: false }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called === false)
++        test.end()
++      })
++    })
++
++    initializeTest.test('call createHandlers with all handler types to register', test => {
++      setupPromises({})
++
++      var prepareHandler = {
++        type: 'prepare',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var positionHandler = {
++        type: 'position',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var transferHandler = {
++        type: 'transfer',
++        enabled: true
++      }
++
++      var fulfilHandler = {
++        type: 'fulfil',
++        enabled: true
++      }
++
++      var rejectHandler = {
++        type: 'reject',
++        enabled: true
++      }
++
++      var modulesList = [
++        prepareHandler,
++        positionHandler,
++        transferHandler,
++        fulfilHandler,
++        rejectHandler
++      ]
++
++      Setup.initialize({ service: 'handlers', modules: modulesList }).then((s) => {
++        test.ok(RegisterHandlers.transfers.registerPrepareHandlers.called)
++        test.ok(RegisterHandlers.positions.registerPositionHandlers.called)
++        test.ok(RegisterHandlers.transfers.registerTransferHandler.called)
++        test.ok(RegisterHandlers.transfers.registerFulfillHandler.called)
++        test.ok(RegisterHandlers.transfers.registerRejectHandler.called)
++        test.ok(s.start instanceof Date)
++        test.same(s.handlers, modulesList)
++        test.end()
++      })
++    })
++
++    initializeTest.test('call createHandlers with an unknown handler type to register', test => {
++      setupPromises({})
++
++      var prepareHandler = {
++        type: 'prepare',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var unknownHandler = {
++        type: 'unknown',
++        enabled: true
++      }
++
++      var modulesList = [
++        prepareHandler,
++        unknownHandler
++      ]
++
++      Setup.initialize({ service: 'handlers', modules: modulesList }).then((s) => {
++        test.fail()
++        test.end()
++      }).catch((err) => {
++        test.ok(RegisterHandlers.transfers.registerPrepareHandlers.called)
++        test.ok(err.message === `Handler Setup - {"type":"${unknownHandler.type}","enabled":${unknownHandler.enabled}} is not a valid handler to register!`)
++        test.end()
++      })
++    })
++
+     initializeTest.end()
+   })
+ 
+diff --git a/testPI2/unit/handlers/handlers.test.js b/testPI2/unit/handlers/handlers.test.js
+deleted file mode 100644
+index 50ae3c3..0000000
+--- a/testPI2/unit/handlers/handlers.test.js
++++ /dev/null
+@@ -1,51 +0,0 @@
+-'use strict'
+-
+-const Test = require('tapes')(require('tape'))
+-const Sinon = require('sinon')
+-const P = require('bluebird')
+-const Handlers = require('../../../src/handlers/handlers')
+-const TransferHandler = require('../../../src/handlers/transfers/handler')
+-const PositionHandler = require('../../../src/handlers/positions/handler')
+-
+-Test('handlers', handlersTest => {
+-  let sandbox
+-
+-  handlersTest.beforeEach(test => {
+-    sandbox = Sinon.sandbox.create()
+-    sandbox.stub(PositionHandler, 'registerAllHandlers').returns(P.resolve(true))
+-    test.end()
+-  })
+-
+-  handlersTest.afterEach(test => {
+-    sandbox.restore()
+-    test.end()
+-  })
+-
+-  handlersTest.test('handlers test should', registerAllTest => {
+-    registerAllTest.test('register all handlers', async (test) => {
+-      Sinon.stub(TransferHandler, 'registerAllHandlers').returns(P.resolve(true))
+-      const result = await Handlers.registerAllHandlers()
+-      test.equal(result, true)
+-      test.end()
+-      TransferHandler.registerAllHandlers.restore()
+-    })
+-
+-    registerAllTest.test('throws error when transfer handler throws error', async (test) => {
+-      try {
+-        Sinon.stub(TransferHandler, 'registerAllHandlers').throws(new Error())
+-        await Handlers.registerAllHandlers()
+-        test.fail('Error not thrown')
+-        test.end()
+-        TransferHandler.registerAllHandlers.restore()
+-      } catch (e) {
+-        test.pass('Error thrown')
+-        test.end()
+-        TransferHandler.registerAllHandlers.restore()
+-      }
+-    })
+-
+-    registerAllTest.end()
+-  })
+-
+-  handlersTest.end()
+-})
+diff --git a/testPI2/unit/handlers/register.test.js b/testPI2/unit/handlers/register.test.js
+new file mode 100644
+index 0000000..222bb44
+--- /dev/null
++++ b/testPI2/unit/handlers/register.test.js
+@@ -0,0 +1,239 @@
++'use strict'
++
++const Test = require('tapes')(require('tape'))
++const Sinon = require('sinon')
++const Hapi = require('hapi')
++const P = require('bluebird')
++const Migrator = require('../../../src/lib/migrator')
++const Db = require('../../../src/db')
++const Config = require('../../../src/lib/config')
++// const Participant = require('../../../src/domain/participant')
++const Plugins = require('../../../src/shared/plugins')
++const RequestLogger = require('../../../src/lib/request-logger')
++const UrlParser = require('../../../src/lib/urlparser')
++const Sidecar = require('../../../src/lib/sidecar')
++const Proxyquire = require('proxyquire')
++const RegisterHandlers = require('../../../src/handlers/register')
++
++Test('setup', setupTest => {
++  let sandbox
++  let uuidStub
++  let oldHostName
++  let oldDatabaseUri
++  let hostName = 'http://test.com'
++  let databaseUri = 'some-database-uri'
++  let Setup
++
++  setupTest.beforeEach(test => {
++    sandbox = Sinon.sandbox.create()
++    sandbox.stub(Hapi, 'Server')
++    sandbox.stub(Plugins, 'registerPlugins')
++    sandbox.stub(Migrator)
++    // sandbox.stub(Participant)
++    sandbox.stub(UrlParser, 'idFromTransferUri')
++    sandbox.stub(RequestLogger, 'logRequest')
++    sandbox.stub(RequestLogger, 'logResponse')
++
++    Sidecar.connect = sandbox.stub()
++    Db.connect = sandbox.stub()
++    Db.disconnect = sandbox.stub()
++    uuidStub = sandbox.stub()
++    RegisterHandlers.registerAllHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerPrepareHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.positions.registerPositionHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerTransferHandler = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerFulfillHandler = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerRejectHandler = sandbox.stub().returns(P.resolve())
++
++    Setup = Proxyquire('../../../src/shared/setup', {
++      'uuid4': uuidStub
++    })
++
++    oldHostName = Config.HOSTNAME
++    oldDatabaseUri = Config.DATABASE_URI
++    Config.DATABASE_URI = databaseUri
++    Config.HOSTNAME = hostName
++
++    test.end()
++  })
++
++  setupTest.afterEach(test => {
++    sandbox.restore()
++    Config.HOSTNAME = oldHostName
++    Config.DATABASE_URI = oldDatabaseUri
++    test.end()
++  })
++
++  const createServer = () => {
++    const server = {
++      connection: sandbox.stub(),
++      register: sandbox.stub(),
++      ext: sandbox.stub(),
++      start: sandbox.stub(),
++      info: {
++        uri: sandbox.stub()
++      }
++    }
++    Hapi.Server.returns(server)
++    return server
++  }
++
++  setupTest.test('initialize should', initializeTest => {
++    const setupPromises = ({service}) => {
++      Migrator.migrate.returns(P.resolve())
++      Db.connect.returns(P.resolve())
++      Sidecar.connect.returns(P.resolve())
++      const server = createServer()
++      if (service === 'api') {
++
++        // Participant.createLedgerParticipant().returns(P.resolve())
++      }
++      return server
++    }
++
++    initializeTest.test('connect to sidecar', test => {
++      const server = setupPromises({})
++
++      const service = 'api'
++      Setup.initialize({ service }).then(s => {
++        test.ok(Db.connect.calledWith(databaseUri))
++        test.ok(Sidecar.connect.calledWith(service))
++        test.notOk(Migrator.migrate.called)
++        test.equal(s, server)
++        test.end()
++      })
++    })
++
++    initializeTest.test('connect to db and return hapi server', test => {
++      const server = setupPromises({})
++
++      const service = 'api'
++      Setup.initialize({ service }).then(s => {
++        test.ok(Db.connect.calledWith(databaseUri))
++        test.notOk(Migrator.migrate.called)
++        test.equal(s, server)
++        test.end()
++      })
++    })
++
++    initializeTest.test('run migrations if runMigrations flag enabled', test => {
++      setupPromises({})
++
++      Setup.initialize({ runMigrations: true }).then(() => {
++        test.ok(Db.connect.called)
++        test.ok(Migrator.migrate.called)
++        test.end()
++      })
++    })
++
++    initializeTest.test('ignore handler registrations if runHandlers flag enabled', test => {
++      setupPromises({})
++
++      Setup.initialize({ service: 'api', runHandlers: true }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called)
++        test.end()
++      })
++    })
++
++    initializeTest.test('ignore handler registrations if runHandlers flag default', test => {
++      setupPromises({})
++
++      Setup.initialize({ service: 'api' }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called)
++        test.end()
++      })
++    })
++
++    initializeTest.test('ignore handler registrations if runHandlers flag disabled', test => {
++      setupPromises({})
++
++      Setup.initialize({ runHandlers: false }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called === false)
++        test.end()
++      })
++    })
++
++    initializeTest.test('call createHandlers with all handler types to register', test => {
++      setupPromises({})
++
++      var prepareHandler = {
++        type: 'prepare',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var positionHandler = {
++        type: 'position',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var transferHandler = {
++        type: 'transfer',
++        enabled: true
++      }
++
++      var fulfilHandler = {
++        type: 'fulfil',
++        enabled: true
++      }
++
++      var rejectHandler = {
++        type: 'reject',
++        enabled: true
++      }
++
++      var modulesList = [
++        prepareHandler,
++        positionHandler,
++        transferHandler,
++        fulfilHandler,
++        rejectHandler
++      ]
++
++      Setup.initialize({ service: 'handlers', modules: modulesList }).then((s) => {
++        test.ok(RegisterHandlers.transfers.registerPrepareHandlers.called)
++        test.ok(RegisterHandlers.positions.registerPositionHandlers.called)
++        test.ok(RegisterHandlers.transfers.registerTransferHandler.called)
++        test.ok(RegisterHandlers.transfers.registerFulfillHandler.called)
++        test.ok(RegisterHandlers.transfers.registerRejectHandler.called)
++        test.ok(s.start instanceof Date)
++        test.same(s.handlers, modulesList)
++        test.end()
++      })
++    })
++
++    initializeTest.test('call createHandlers with an unknown handler type to register', test => {
++      setupPromises({})
++
++      var prepareHandler = {
++        type: 'prepare',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var unknownHandler = {
++        type: 'unknown',
++        enabled: true
++      }
++
++      var modulesList = [
++        prepareHandler,
++        unknownHandler
++      ]
++
++      Setup.initialize({ service: 'handlers', modules: modulesList }).then((s) => {
++        test.fail()
++        test.end()
++      }).catch((err) => {
++        test.ok(RegisterHandlers.transfers.registerPrepareHandlers.called)
++        test.ok(err.message === `Handler Setup - {"type":"${unknownHandler.type}","enabled":${unknownHandler.enabled}} is not a valid handler to register!`)
++        test.end()
++      })
++    })
++
++    initializeTest.end()
++  })
++
++  setupTest.end()
++})
+diff --git a/testPI2/unit/shared/setup.test.js b/testPI2/unit/shared/setup.test.js
+index 2dae172..222bb44 100644
+--- a/testPI2/unit/shared/setup.test.js
++++ b/testPI2/unit/shared/setup.test.js
+@@ -9,12 +9,11 @@ const Db = require('../../../src/db')
+ const Config = require('../../../src/lib/config')
+ // const Participant = require('../../../src/domain/participant')
+ const Plugins = require('../../../src/shared/plugins')
+-const HandlerPlugins = require('../../../src/handlers/plugin')
+ const RequestLogger = require('../../../src/lib/request-logger')
+ const UrlParser = require('../../../src/lib/urlparser')
+ const Sidecar = require('../../../src/lib/sidecar')
+ const Proxyquire = require('proxyquire')
+-const RegisterHandlers = require('../../../src/handlers/handlers')
++const RegisterHandlers = require('../../../src/handlers/register')
+ 
+ Test('setup', setupTest => {
+   let sandbox
+@@ -29,9 +28,7 @@ Test('setup', setupTest => {
+     sandbox = Sinon.sandbox.create()
+     sandbox.stub(Hapi, 'Server')
+     sandbox.stub(Plugins, 'registerPlugins')
+-    sandbox.stub(HandlerPlugins, 'plugin')
+     sandbox.stub(Migrator)
+-    sandbox.stub(RegisterHandlers, 'registerAllHandlers')
+     // sandbox.stub(Participant)
+     sandbox.stub(UrlParser, 'idFromTransferUri')
+     sandbox.stub(RequestLogger, 'logRequest')
+@@ -41,8 +38,16 @@ Test('setup', setupTest => {
+     Db.connect = sandbox.stub()
+     Db.disconnect = sandbox.stub()
+     uuidStub = sandbox.stub()
+-
+-    Setup = Proxyquire('../../../src/shared/setup', { 'uuid4': uuidStub })
++    RegisterHandlers.registerAllHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerPrepareHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.positions.registerPositionHandlers = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerTransferHandler = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerFulfillHandler = sandbox.stub().returns(P.resolve())
++    RegisterHandlers.transfers.registerRejectHandler = sandbox.stub().returns(P.resolve())
++
++    Setup = Proxyquire('../../../src/shared/setup', {
++      'uuid4': uuidStub
++    })
+ 
+     oldHostName = Config.HOSTNAME
+     oldDatabaseUri = Config.DATABASE_URI
+@@ -73,23 +78,23 @@ Test('setup', setupTest => {
+     return server
+   }
+ 
+-  setupTest.test('initialize should', async (initializeTest) => {
+-    const setupPromises = async ({service}) => {
++  setupTest.test('initialize should', initializeTest => {
++    const setupPromises = ({service}) => {
+       Migrator.migrate.returns(P.resolve())
+       Db.connect.returns(P.resolve())
+       Sidecar.connect.returns(P.resolve())
+       const server = createServer()
+       if (service === 'api') {
+-        await RegisterHandlers.registerAllHandlers.returns(P.resolve())
++
+         // Participant.createLedgerParticipant().returns(P.resolve())
+       }
+       return server
+     }
+ 
+-    initializeTest.test('connect to sidecar', async (test) => {
+-      const server = await setupPromises({})
++    initializeTest.test('connect to sidecar', test => {
++      const server = setupPromises({})
+ 
+-      const service = 'test'
++      const service = 'api'
+       Setup.initialize({ service }).then(s => {
+         test.ok(Db.connect.calledWith(databaseUri))
+         test.ok(Sidecar.connect.calledWith(service))
+@@ -99,10 +104,11 @@ Test('setup', setupTest => {
+       })
+     })
+ 
+-    initializeTest.test('connect to db and return hapi server', async (test) => {
+-      const server = await setupPromises({})
++    initializeTest.test('connect to db and return hapi server', test => {
++      const server = setupPromises({})
+ 
+-      Setup.initialize({}).then(s => {
++      const service = 'api'
++      Setup.initialize({ service }).then(s => {
+         test.ok(Db.connect.calledWith(databaseUri))
+         test.notOk(Migrator.migrate.called)
+         test.equal(s, server)
+@@ -110,8 +116,8 @@ Test('setup', setupTest => {
+       })
+     })
+ 
+-    initializeTest.test('run migrations if runMigrations flag enabled', async (test) => {
+-      await setupPromises({})
++    initializeTest.test('run migrations if runMigrations flag enabled', test => {
++      setupPromises({})
+ 
+       Setup.initialize({ runMigrations: true }).then(() => {
+         test.ok(Db.connect.called)
+@@ -120,6 +126,112 @@ Test('setup', setupTest => {
+       })
+     })
+ 
++    initializeTest.test('ignore handler registrations if runHandlers flag enabled', test => {
++      setupPromises({})
++
++      Setup.initialize({ service: 'api', runHandlers: true }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called)
++        test.end()
++      })
++    })
++
++    initializeTest.test('ignore handler registrations if runHandlers flag default', test => {
++      setupPromises({})
++
++      Setup.initialize({ service: 'api' }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called)
++        test.end()
++      })
++    })
++
++    initializeTest.test('ignore handler registrations if runHandlers flag disabled', test => {
++      setupPromises({})
++
++      Setup.initialize({ runHandlers: false }).then(() => {
++        test.ok(RegisterHandlers.registerAllHandlers.called === false)
++        test.end()
++      })
++    })
++
++    initializeTest.test('call createHandlers with all handler types to register', test => {
++      setupPromises({})
++
++      var prepareHandler = {
++        type: 'prepare',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var positionHandler = {
++        type: 'position',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var transferHandler = {
++        type: 'transfer',
++        enabled: true
++      }
++
++      var fulfilHandler = {
++        type: 'fulfil',
++        enabled: true
++      }
++
++      var rejectHandler = {
++        type: 'reject',
++        enabled: true
++      }
++
++      var modulesList = [
++        prepareHandler,
++        positionHandler,
++        transferHandler,
++        fulfilHandler,
++        rejectHandler
++      ]
++
++      Setup.initialize({ service: 'handlers', modules: modulesList }).then((s) => {
++        test.ok(RegisterHandlers.transfers.registerPrepareHandlers.called)
++        test.ok(RegisterHandlers.positions.registerPositionHandlers.called)
++        test.ok(RegisterHandlers.transfers.registerTransferHandler.called)
++        test.ok(RegisterHandlers.transfers.registerFulfillHandler.called)
++        test.ok(RegisterHandlers.transfers.registerRejectHandler.called)
++        test.ok(s.start instanceof Date)
++        test.same(s.handlers, modulesList)
++        test.end()
++      })
++    })
++
++    initializeTest.test('call createHandlers with an unknown handler type to register', test => {
++      setupPromises({})
++
++      var prepareHandler = {
++        type: 'prepare',
++        enabled: true,
++        fspList: ['dfsp1', 'dfsp2']
++      }
++
++      var unknownHandler = {
++        type: 'unknown',
++        enabled: true
++      }
++
++      var modulesList = [
++        prepareHandler,
++        unknownHandler
++      ]
++
++      Setup.initialize({ service: 'handlers', modules: modulesList }).then((s) => {
++        test.fail()
++        test.end()
++      }).catch((err) => {
++        test.ok(RegisterHandlers.transfers.registerPrepareHandlers.called)
++        test.ok(err.message === `Handler Setup - {"type":"${unknownHandler.type}","enabled":${unknownHandler.enabled}} is not a valid handler to register!`)
++        test.end()
++      })
++    })
++
+     initializeTest.end()
+   })
+ 
+-- 
+2.15.2 (Apple Git-101.1)
+
