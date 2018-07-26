@@ -72,7 +72,7 @@ Program.command('handler') // sub-command name, coffeeType = type, required
       }
       if (args.position) {
         Logger.debug(`CLI: Executing --position ${args.position}`)
-        let handlerList = args.prepare.replace(/\s/g, '').split(',')
+        let handlerList = args.position.replace(/\s/g, '').split(',')
         if (Array.isArray(handlerList) && handlerList.length >= 1) {
           let handler = {
             type: 'position',
