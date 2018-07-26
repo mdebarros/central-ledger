@@ -128,12 +128,18 @@ const createPositionHandler = async (participantName) => {
  * createPositionHandler called to create the handler for each participant
  * @returns {boolean} - Returns a boolean: true if successful, or throws and error if failed
  */
-const registerPositionHandlers = async () => {
+const registerPositionHandlers = async (pParticipantNames = []) => {
   var metricStartNow = (new Date()).getTime()
   try {
-    const participantList = await DAO.retrieveAllParticipants()
-    if (participantList.length !== 0) {
-      for (let name of participantList) {
+    let participantNames
+    if (Array.isArray(pParticipantNames) && pParticipantNames.length > 0) {
+      participantNames = pParticipantNames
+    } else {
+      participantNames = await DAO.retrieveAllParticipants()
+    }
+    // const participantNames = await DAO.retrieveAllParticipants()
+    if (participantNames.length !== 0) {
+      for (let name of participantNames) {
         await createPositionHandler(name)
       }
     } else {
@@ -146,6 +152,7 @@ const registerPositionHandlers = async () => {
   let metricEndNow = (new Date()).getTime()
   let metricCenLedgerRegisterPositionHandlers = metricEndNow - metricStartNow
   Perf4js.info(metricStartNow, metricCenLedgerRegisterPositionHandlers, 'metricCenLedgerRegisterPositionHandlers')
+  return true
 }
 
 /**

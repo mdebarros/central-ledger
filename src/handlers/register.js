@@ -47,6 +47,8 @@
 const Logger = require('@mojaloop/central-services-shared').Logger
 const Perf4js = require('@mojaloop/central-services-shared').Perf4js
 const requireGlob = require('require-glob')
+const TransferHandlers = require('./transfers/handler')
+const PositionHandlers = require('./positions/handler')
 
 const registerAllHandlers = async (request, h) => {
   var metricStartNow = (new Date()).getTime()
@@ -70,5 +72,16 @@ const registerAllHandlers = async (request, h) => {
 }
 
 module.exports = {
-  registerAllHandlers
+  registerAllHandlers,
+  transfers: {
+    registerAllHandlers: TransferHandlers.registerAllHandlers,
+    registerPrepareHandlers: TransferHandlers.registerPrepareHandlers,
+    registerTransferHandler: TransferHandlers.registerTransferHandler,
+    registerFulfillHandler: TransferHandlers.registerFulfillHandler,
+    registerRejectHandler: TransferHandlers.registerRejectHandler
+  },
+  positions: {
+    registerAllHandlers: PositionHandlers.registerAllHandlers,
+    registerPositionHandlers: PositionHandlers.registerPositionHandlers
+  }
 }

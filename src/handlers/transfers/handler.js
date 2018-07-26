@@ -466,12 +466,19 @@ const registerRejectHandler = async () => {
  * createPrepareHandler called to create the handler for each participant
  * @returns {boolean} - Returns a boolean: true if successful, or throws and error if failed
  */
-const registerPrepareHandlers = async () => {
+const registerPrepareHandlers = async (pParticipantNames = []) => {
   var metricStartNow = (new Date()).getTime()
   try {
-    const participantNames = await DAO.retrieveAllParticipants()
+    let participantNames
+    if (Array.isArray(pParticipantNames) && pParticipantNames.length > 0) {
+      participantNames = pParticipantNames
+    } else {
+      participantNames = await DAO.retrieveAllParticipants()
+    }
+    // const participantNames = await DAO.retrieveAllParticipants()
     if (participantNames.length !== 0) {
       for (let name of participantNames) {
+        Logger.info(`Registering prepareHandler for Participant: ${name}`)
         await createPrepareHandler(name)
       }
     } else {
