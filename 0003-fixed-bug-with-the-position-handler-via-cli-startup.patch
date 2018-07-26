@@ -1,0 +1,25 @@
+From 2630e71c57f7fd609f92cfed91fcdaa6d95bc498 Mon Sep 17 00:00:00 2001
+From: Miguel de Barros <miguel@debarros.me>
+Date: Thu, 26 Jul 2018 14:57:34 +0200
+Subject: [PATCH 3/3] fixed bug with the position handler via cli startup
+
+---
+ src/handlers/index.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/handlers/index.js b/src/handlers/index.js
+index 6517fc8..6620293 100644
+--- a/src/handlers/index.js
++++ b/src/handlers/index.js
+@@ -72,7 +72,7 @@ Program.command('handler') // sub-command name, coffeeType = type, required
+       }
+       if (args.position) {
+         Logger.debug(`CLI: Executing --position ${args.position}`)
+-        let handlerList = args.prepare.replace(/\s/g, '').split(',')
++        let handlerList = args.position.replace(/\s/g, '').split(',')
+         if (Array.isArray(handlerList) && handlerList.length >= 1) {
+           let handler = {
+             type: 'position',
+-- 
+2.15.2 (Apple Git-101.1)
+
