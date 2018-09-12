@@ -65,6 +65,7 @@
     "@now-ims/hapi-now-auth": "1.0.1",
     "argon2": "0.17.1",
     "base64-url": "^2.2.0",
+    "base64url": "^3.0.0",
     "bcrypt": "1.0.3",
     "blipp": "3.0.0",
     "bluebird": "3.5.0",
