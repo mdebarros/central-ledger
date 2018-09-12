@@ -232,27 +232,14 @@ const l1pPacket = 'AQAAAAAAAABkC3ByaXZhdGUuYm9iggXcZXlKMGNtRnVjMkZqZEdsdmJrbGtJa
 //   .digest()
 //   .toString('base64')
 
-const caluclateFulfil = (packet, secret) => {
-  // var hmacsignature = Crypto.createHmac('sha256', new Buffer(secret, 'utf8'))
-  //   .update(base64url.toBuffer(packet)) // make sure to pass the packet in as a Buffer
-  // var hmacsignature = Crypto.createHmac('SHA256', new Buffer(secret, 'utf8'))
-    // .update(new Buffer(packet, 'utf8')) // make sure to pass the packet in as a Buffer
-  //   .digest()
-  var hmacsignature = Crypto.createHmac('sha256', secret)
-    .update(packet) // make sure to pass the packet in as a Buffer
+const caluclateFulfil = (base64EncodedPacket, rawSecret) => {
+  var hmacsignature = Crypto.createHmac('sha256', new Buffer(base64url(rawSecret), 'ascii'))
+    .update(new Buffer(base64EncodedPacket, 'ascii')) // make sure to pass the packet in as a Buffer
 
   var generatedFulfilment = hmacsignature.digest('base64')
 
-  console.log(`caluclateFulfil:: generatedFulfilment=${generatedFulfilment} | length:${generatedFulfilment.length}`)
+  // console.log(`caluclateFulfil:: generatedFulfilment=${generatedFulfilment} | length:${generatedFulfilment.length}`)
 
-  // created a SHA256 Hash of the hmac pre-image
-  // var hashSha256 = Crypto.createHash('sha256')
-  //
-  // var based64EncodedFulfil = hashSha256.update(hmacsignature, 'utf8').digest()
-  // return base64url.encode(hmacsignature)
-  // return base64url.escape(generatedFulfilment)
-  // return base64url.encode(generatedFulfilment, 'utf8')
-  // return base64url.encode(hmacsignature, 'utf8')
   return base64url.fromBase64(generatedFulfilment)
 }
 
@@ -278,24 +265,43 @@ const caluclateFulfil = (packet, secret) => {
 
 var l1pGeneratedFulfilment = caluclateFulfil(l1pPacket, l1pSecret)
 
+var l1pProvidedFulfilment = 'fEGpcud1ZXZDCyTIkJjf4P5TEW80R0igI72nMAg9dE8'
+
 console.log(`l1pGeneratedFulfilment=${l1pGeneratedFulfilment}`)
 
-//
-// const calculateConditionFromFulfilMurthy = (fulfilment) => {
+console.log(`l1pProvidedFulfilment=${l1pProvidedFulfilment}`)
+
+console.log(`Do they match? ${l1pGeneratedFulfilment === l1pProvidedFulfilment}`)
+
+const calculateConditionFromFulfil = (fulfilment) => {
+  // TODO: The following hashing code should be moved into a re-usable common-shared-service at a later point
+  var hashSha256 = Crypto.createHash('sha256')
+  var preimage = base64url.decode(fulfilment, 'ascii')
+  // var preimage = base64url.decode(fulfilment, 'utf8')
+  // var preimage = base64url.decode(fulfilment)
+  // if (preimage.length !== 32) {
+  //   throw new Error('Interledger preimages must be exactly 32 bytes.')
+  // }
+  // var decodedBufferFulfilment = new Buffer(decodedFulfilment, 'ascii')
+  var calculatedConditionDigest = hashSha256.update(new Buffer(preimage, 'ascii')).digest('base64')
+  console.log(`calculatedConditionDigest=${calculatedConditionDigest}`)
+  return base64url.fromBase64(calculatedConditionDigest)
+}
+
+// NOTE: This logic is based on v1.0 of the Mojaloop Specification as described in section 6.5.1.2
+// const validateFulfilCondition = (fulfilment, condition) => {
 //   // TODO: The following hashing code should be moved into a re-usable common-shared-service at a later point
-//   var hashSha256 = Crypto.createHash('sha256')
-//   // var calculatedCondition = fulfilment // based on 6.5.1.2, the hash should be done on the decoded value as per the next line
-//   var calculatedCondition = base64url.decode(fulfilment)
-//   // calculatedCondition = hashSha256.update(calculatedCondition)
-//   calculatedCondition = hashSha256.digest(new Buffer(calculatedCondition)).toString('base64')
-//   calculatedCondition = base64url.escape(calculatedCondition)
-//   console.log(`calculatedCondition=${calculatedCondition}`)
-//   return calculatedCondition
-// }
-//
-// // NOTE: This logic is based on v1.0 of the Mojaloop Specification as described in section 6.5.1.2
-// const validateFulfilConditionMurthy = (fulfilment, condition) => {
-//   // TODO: The following hashing code should be moved into a re-usable common-shared-service at a later point
-//   var calculatedCondition = calculateConditionFromFulfilMurthy(fulfilment)
+//   var calculatedCondition = calculateConditionFromFulfil(fulfilment)
 //   return calculatedCondition === condition
 // }
+
+var l1pProvidedCondition = 'mEw-mqZdYOnuzv4oOVbd9yCXZ5b6xcfO5lUvfpec1KY'
+
+var l1pGeneratedCondition = calculateConditionFromFulfil(l1pGeneratedFulfilment)
+
+console.log(`l1pGeneratedCondition=${l1pGeneratedCondition}`)
+
+console.log(`l1pProvidedCondition=${l1pProvidedCondition}`)
+
+console.log(`Do they match? ${l1pGeneratedCondition === l1pProvidedCondition}`)
+
